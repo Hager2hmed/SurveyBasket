@@ -12,6 +12,7 @@ namespace DentalNUB.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = "Doctor")]
     public class DoctorsController : ControllerBase
     {
         private readonly DentalNUBDbContext _context;
@@ -21,7 +22,7 @@ namespace DentalNUB.Api.Controllers
             _context = context;
         }
 
-        [Authorize(Roles = "Doctor")]
+       
         [HttpPost("complete-profile")]
         public async Task<IActionResult> CompleteDoctorProfile([FromBody] CompleteDoctorProfileRequest request)
         {
@@ -180,6 +181,49 @@ namespace DentalNUB.Api.Controllers
             };
 
             return Ok(response);
+        }
+
+        [HttpGet("case/{caseId}/diagnosis")]
+        public async Task<IActionResult> GetDiagnosisForCase(int caseId)
+        {
+            // جيب الـ UserId من الـ JWT token عشان نتأكد إن الدكتور هو اللي له صلاحية على الـ PatientCase
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return Unauthorized("Invalid user ID.");
+            }
+
+            // تحقق إن الـ PatientCase موجود ومرتبط بالدكتور
+            var patientCase = await _context.PatientCases
+                .Include(pc => pc.Doctor)
+                .FirstOrDefaultAsync(pc => pc.CaseID == caseId && pc.Doctor.UserId == userId);
+
+            if (patientCase == null)
+            {
+                return NotFound("Case not found or not assigned to this doctor.");
+            }
+
+            // جيب الـ Diagnose المرتبط بالـ PatientCase
+            var diagnose = await _context.Diagnoses
+                .Where(d => d.DiagnoseID == patientCase.DiagnoseID)
+                .Select(d => new
+                {
+                    d.AssignedClinic,
+                    d.FinalDiagnose
+                })
+                .FirstOrDefaultAsync();
+
+            if (diagnose == null)
+            {
+                return NotFound("No diagnosis found for this case.");
+            }
+
+            // ارجع الـ response
+            return Ok(new
+            {
+                AssignedClinic = diagnose.AssignedClinic,
+                FinalDiagnose = diagnose.FinalDiagnose
+            });
         }
 
     }
