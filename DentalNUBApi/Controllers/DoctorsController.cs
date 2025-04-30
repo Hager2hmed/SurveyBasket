@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 
 namespace DentalNUB.Api.Controllers
 {
@@ -22,63 +23,84 @@ namespace DentalNUB.Api.Controllers
             _context = context;
         }
 
-       
         [HttpPost("complete-profile")]
         public async Task<IActionResult> CompleteDoctorProfile([FromBody] CompleteDoctorProfileRequest request)
         {
+            // 1. التحقق من التوكن
             var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
                 return Unauthorized("User ID not found in token");
 
-            var userId = int.Parse(userIdClaim.Value);
-            var user = await _context.Users.FindAsync(userId);
+            if (!int.TryParse(userIdClaim.Value, out var userId))
+                return Unauthorized("Invalid User ID in token");
 
+            var user = await _context.Users.FindAsync(userId);
             if (user == null || user.Role != "Doctor")
                 return BadRequest("Invalid user or role");
 
+            // 2. التحقق من الـ Clinic
             var clinic = await _context.Clinics
-                .Include(c => c.Doctors)
                 .FirstOrDefaultAsync(c => c.ClinicName == request.ClinicName);
-
             if (clinic == null)
                 return BadRequest("Clinic not found");
 
-                var existingDoctors = await _context.Doctors
-        .Include(d => d.ClinicSection) // عشان نجيب السيكشن اللي الدكتور عليه
-        .Where(d => d.ClinicID == clinic.ClinicID && d.DoctorYear == request.DoctorYear)
-        .ToListAsync();
+            // 3. التحقق من توافق DoctorYear مع AllowedYear
+            if (clinic.AllowedYear.HasValue && clinic.AllowedYear != request.DoctorYear)
+                return BadRequest($"This clinic is only available for year {clinic.AllowedYear}");
 
-            var groupedBySection = existingDoctors
-                .GroupBy(d => d.ClinicSection!.SectionName)
-                .OrderBy(g => g.Key)
-                .ToList();
+            // 4. إيجاد أو إنشاء ClinicSection
+            var existingSections = await _context.clinicSections
+                .Where(s => s.ClinicID == clinic.ClinicID && s.DoctorYear == request.DoctorYear)
+                .OrderBy(s => s.SectionName)
+                .ToListAsync();
 
             string sectionName;
             int orderInSection;
 
-            if (groupedBySection.Count == 0)
+            if (!existingSections.Any())
             {
+                // أول Section للـ Clinic والسنة دي
                 sectionName = $"{clinic.ClinicName} A";
                 orderInSection = 1;
             }
             else
             {
-                var lastGroup = groupedBySection.Last();
-                if (lastGroup.Count() < 30)
+                // ابحث عن Section فيها مكان (أقل من 30 طالب)
+                var availableSection = existingSections
+                    .Select(s => new
+                    {
+                        Section = s,
+                        DoctorCount = _context.Doctors.Count(d => d.SectionID == s.SectionID)
+                    })
+                    .FirstOrDefault(s => s.DoctorCount < 30);
+
+                if (availableSection != null)
                 {
-                    sectionName = lastGroup.Key;
-                    orderInSection = lastGroup.Count() + 1;
+                    sectionName = availableSection.Section.SectionName;
+                    orderInSection = availableSection.DoctorCount + 1;
                 }
                 else
                 {
-                    char lastLetter = lastGroup.Key.Last();
-                    char newLetter = (char)(lastLetter + 1);
+                    // تحقق من عدد الـ Sections
+                    if (existingSections.Count >= 3)
+                        return BadRequest("Maximum number of sections (A, B, C) reached for this clinic and year");
+
+                    // إنشاء Section جديدة
+                    var lastSection = existingSections.Last();
+                    var lastLetter = lastSection.SectionName.Split(' ').Last(); // e.g., "A", "B"
+                    if (!Regex.IsMatch(lastLetter, @"^[A-C]$"))
+                        return BadRequest("Invalid section letter detected");
+
+                    var newLetter = (char)(lastLetter[0] + 1); // A -> B, B -> C
+                    if (newLetter > 'C')
+                        return BadRequest("Cannot create more sections beyond C");
+
                     sectionName = $"{clinic.ClinicName} {newLetter}";
                     orderInSection = 1;
                 }
             }
 
-            // ابحث عن السيكشن لو موجود، لو مش موجود انشئه
+            // 5. إيجاد أو إنشاء ClinicSection
             var clinicSection = await _context.clinicSections
                 .FirstOrDefaultAsync(s => s.ClinicID == clinic.ClinicID && s.SectionName == sectionName && s.DoctorYear == request.DoctorYear);
 
@@ -91,29 +113,43 @@ namespace DentalNUB.Api.Controllers
                     DoctorYear = request.DoctorYear,
                     MaxStudents = 30
                 };
-
                 _context.clinicSections.Add(clinicSection);
                 await _context.SaveChangesAsync();
             }
 
+            // 6. إنشاء الدكتور
             var doctor = new Doctor
             {
                 DoctorName = user.FullName,
                 DoctorEmail = user.Email,
-                DoctorPassword = user.PasswordHash,
+                DoctorPassword = user.PasswordHash, // Hashed بـ BCrypt من جدول Users
                 DoctorPhone = request.DoctorPhone,
                 DoctorYear = request.DoctorYear,
                 UniversityID = request.UniversityID,
                 ClinicID = clinic.ClinicID,
-                SectionOrder = orderInSection,
                 SectionID = clinicSection.SectionID,
+                SectionOrder = orderInSection,
                 UserId = user.UserId
             };
 
             _context.Doctors.Add(doctor);
-            await _context.SaveChangesAsync();
 
-            return Ok($"✅ تم إكمال الملف بنجاح! السيكشن: {sectionName}، ترتيبك فيه: {orderInSection}");
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error saving doctor profile: {ex.Message}");
+            }
+
+            // 7. إرجاع الرد
+            return Ok(new
+            {
+                Message = "Doctor profile completed successfully!",
+                SectionName = sectionName,
+                SectionOrder = orderInSection
+            });
         }
 
 
@@ -129,10 +165,13 @@ namespace DentalNUB.Api.Controllers
             var doctor = await _context.Doctors
                 .Include(d => d.Patientcases)
                     .ThenInclude(c => c.Patient)
-                .FirstOrDefaultAsync(d => d.UserId == userId); // تمام كده لأنه int
+                .FirstOrDefaultAsync(d => d.UserId == userId);
 
             if (doctor == null)
                 return NotFound("Doctor not found.");
+
+            if (doctor.Patientcases == null || !doctor.Patientcases.Any())
+                return Ok(new List<CasesDetailsResponse>()); // إرجاع قايمة فاضية لو مفيش Cases
 
             var response = doctor.Patientcases
                 .Select(c => new CasesDetailsResponse
@@ -142,11 +181,11 @@ namespace DentalNUB.Api.Controllers
                     Age = c.Patient.Age,
                     PatPhone = c.Patient.PatPhone,
                     ChronicalDiseases = c.Patient.ChronicalDiseases
-                }).ToList();
+                })
+                .ToList();
 
             return Ok(response);
         }
-
 
         [Authorize(Roles = "Doctor")]
         [HttpGet("cases/{caseId}")]

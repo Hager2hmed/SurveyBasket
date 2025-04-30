@@ -100,9 +100,8 @@ public class ClinicsController : ControllerBase
 
 
 
-
     [HttpGet("GetAll")]
-    [AllowAnonymous] // عشان أي يوزر يقدر يشوفها
+    [Authorize(Roles = "Admin,Doctor,Consultant")]
     public async Task<ActionResult<List<ClinicResponse>>> GetAllClinics()
     {
         var clinics = await _context.Clinics.ToListAsync();
@@ -117,4 +116,4 @@ public class ClinicsController : ControllerBase
 
         return Ok(response);
     }
-    }
+}

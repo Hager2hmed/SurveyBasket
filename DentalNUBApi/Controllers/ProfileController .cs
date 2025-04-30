@@ -118,36 +118,40 @@ public class ProfileController : ControllerBase
                 return BadRequest("Phone number, Academic Year, and Clinic name are required.");
             }
 
+            // حنحسب لو حصل تغيير فعلي
             bool phoneChanged = doctor.DoctorPhone != request.DoctorPhone;
             bool yearChanged = doctor.DoctorYear != request.DoctorYear;
             bool clinicChanged = doctor.Clinic?.ClinicName != request.ClinicName;
 
+            // لو ما فيش أي تغيير
+            if (!phoneChanged && !yearChanged && !clinicChanged)
+            {
+                return Ok("No changes detected. Profile remains the same.");
+            }
+
+            // لو التليفون اتغير
             if (phoneChanged)
             {
                 doctor.DoctorPhone = request.DoctorPhone;
             }
 
-            if (yearChanged)
+            // لو السنة أو العيادة اتغيروا
+            if (yearChanged || clinicChanged)
             {
-                doctor.DoctorYear = request.DoctorYear;
-            }
-
-            if (clinicChanged || yearChanged)
-            {
-                // remove from old section if exists
+                // Remove from old section
                 if (doctor.ClinicSection != null)
                 {
                     doctor.ClinicSection.Doctors.Remove(doctor);
                 }
 
-                // Get clinic by name
+                // Get new clinic
                 var newClinic = await _context.Clinics.FirstOrDefaultAsync(c => c.ClinicName == request.ClinicName);
                 if (newClinic == null)
                 {
                     return BadRequest("Invalid Clinic Name.");
                 }
 
-                // Try to find existing section for same clinic and year
+                // Find or create section
                 var section = await _context.clinicSections
                     .Include(s => s.Doctors)
                     .FirstOrDefaultAsync(s => s.ClinicID == newClinic.ClinicID && s.DoctorYear == request.DoctorYear);
@@ -159,14 +163,15 @@ public class ProfileController : ControllerBase
                         ClinicID = newClinic.ClinicID,
                         SectionName = $"{newClinic.ClinicName}-Y{request.DoctorYear}",
                         DoctorYear = request.DoctorYear,
-                        MaxStudents = newClinic.MaxStudent, // ← خدها من العيادة نفسها
+                        MaxStudents = newClinic.MaxStudent,
                         Doctors = new List<Doctor>()
                     };
 
                     _context.clinicSections.Add(section);
                 }
 
-
+                // Update doctor info
+                doctor.DoctorYear = request.DoctorYear;
                 doctor.Clinic = newClinic;
                 doctor.ClinicSection = section;
 
@@ -176,7 +181,6 @@ public class ProfileController : ControllerBase
                 }
             }
 
-            // التأكد من وجود الدكتور قبل الحفظ النهائي
             var existsBeforeSave = await _context.Doctors.AnyAsync(d => d.UserId == userId);
             if (!existsBeforeSave)
             {
@@ -186,7 +190,7 @@ public class ProfileController : ControllerBase
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            return Ok("Doctor profile updated successfully.");
+            return Ok("profile updated successfully.");
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -199,7 +203,6 @@ public class ProfileController : ControllerBase
             return StatusCode(500, "An error occurred while updating the doctor profile.");
         }
     }
-
 
 
 }
