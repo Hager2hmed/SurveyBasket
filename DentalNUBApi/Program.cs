@@ -20,6 +20,8 @@
     builder.Services.AddScoped<ICaseDistributionService,CaseDistributionService>();
     builder.Services.AddScoped<IImageService, ImageService>();
     //builder.Services.AddScoped<IUserService, UserService>();
+    //builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
+    //builder.Services.AddScoped<IEmailService, EmailService>();
 
 
 
