@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Data\Migrations\" />
     <Folder Include="ToolImage\" />
     <Folder Include="XRayImages\" />
   </ItemGroup>
