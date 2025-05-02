@@ -4,46 +4,43 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace DentalNUB.Api.Entities;
 
 public class Appointment
+
 {
-    public enum ClinicTypeEnum
+    public enum BookingTypeEnum
     {
-        VIP,
-        Economic
+        Normal=0,   // حجز عادي
+        VIP=1      // حجز VIP
     }
 
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-
     public int AppointID { get; set; }
 
-   
     public int PatientID { get; set; }
-
 
     public int? ConsID { get; set; }
 
     [Required]
-    public ClinicTypeEnum ClinicType { get; set; }
+    public int BookingType { get; set; }
 
     [Required]
     public DateTime AppointDate { get; set; }
 
     [Required]
     [Column(TypeName = "nvarchar(100)")]
-    public string? Complaint { get; set; }
-    
-  
+    public string Complaint { get; set; } = string.Empty;
+
+
     public int QueueNumber { get; set; }
     public string? XRayImage { get; set; }
    
 
     [ForeignKey("PatientID")]
-    public  virtual Patient ? Patient { get; set; }
+    public virtual Patient? Patient { get; set; }
 
     [ForeignKey("ConsID")]
-    public Consultant ? Consultant { get; set; }
-    public Diagnose ? Diagnose { get; set; }
-    public Appointment() { }
-   
+    public Consultant? Consultant { get; set; }
+    public Diagnose? Diagnose { get; set; }
 
+    public Appointment() { }
 }

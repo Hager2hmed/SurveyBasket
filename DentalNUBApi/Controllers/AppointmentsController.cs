@@ -201,7 +201,9 @@ namespace DentalNUB.Api.Controllers
 
             // إنشاء الحجز وربطه بالمريض
             var appointment = request.Adapt<Appointment>();
+            appointment.BookingType = (int)request.BookingType;
             appointment.PatientID = patient.PatientID;
+
             appointment.AppointDate = DateTime.Now;
 
             // حفظ صورة الأشعة إن وُجدت
@@ -225,7 +227,7 @@ namespace DentalNUB.Api.Controllers
                 .AddMinutes((queueNumber - 1) * 15);
 
             // إعداد الريسبونس النهائي
-            var response = new AppointmentResponse
+            var response = new AppointmentResponse(appointment)
             {
                 AppointmentId = appointment.AppointID,
                 PatientName = patient.PatientName,
@@ -253,7 +255,7 @@ namespace DentalNUB.Api.Controllers
                 }
             }
 
-            return null; 
+            return null;
         }
 
         private string GetChronicDiseaseName(int chronicDiseaseValue)
@@ -267,5 +269,3 @@ namespace DentalNUB.Api.Controllers
 
     }
 }
-
-

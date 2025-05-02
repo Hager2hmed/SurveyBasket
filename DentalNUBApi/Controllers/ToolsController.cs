@@ -38,12 +38,15 @@ namespace DentalNUB.Api.Controllers
 
             var imageUrl = await _imageService.UploadAsync(request.Image, "ToolImages");
 
+            // تعديل: لو السعر = 0 نعتبرها مجانية
+            var isFree = request.Price == 0;
+
             var toolPost = new ToolPost
             {
                 DoctorID = doctor.DoctorID,
                 ToolName = request.ToolName,
-                Price = request.IsFree ? null : request.Price,
-                IsFree = request.IsFree,
+                Price = isFree ? 0 : request.Price,
+                IsFree = isFree,
                 ImageUrl = imageUrl
             };
 
@@ -100,6 +103,28 @@ namespace DentalNUB.Api.Controllers
             return Ok(tool);
         }
 
+        // دالة عرض الأدوات المجانية فقط
+        [HttpGet("free")]
+        [Authorize(Roles = "Doctor")]
+        public async Task<IActionResult> GetFreeTools()
+        {
+            var freeTools = await _context.ToolPosts
+                .Include(t => t.Doctor)
+                .Where(t => t.IsFree && t.Price == 0)
+                .Select(t => new
+                {
+                    t.ToolPostID,
+                    t.ToolName,
+                    t.Price,
+                    t.IsFree,
+                    t.ImageUrl,
+                    DoctorName = t.Doctor.DoctorName
+                })
+                .ToListAsync();
+
+            return Ok(freeTools);
+        }
+
         // دالة شراء الأداة
         [HttpPost("buy/{toolPostId}")]
         [Authorize(Roles = "Doctor")]
@@ -121,14 +146,13 @@ namespace DentalNUB.Api.Controllers
             if (toolPost == null)
                 return NotFound("Tool not found");
 
-            // بمجرد شراء الأداة، نقوم بعرض التفاصيل، بما في ذلك رقم الهاتف
             return Ok(new
             {
                 toolPost.ToolName,
                 toolPost.Price,
                 toolPost.ImageUrl,
                 toolPost.Doctor.DoctorName,
-                toolPost.Doctor.DoctorPhone // عرض رقم تليفون الدكتور صاحب الأداة
+                toolPost.Doctor.DoctorPhone
             });
         }
     }
