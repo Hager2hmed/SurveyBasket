@@ -28,10 +28,10 @@
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ??
         throw new InvalidOperationException("Connection string 'DefaultConnection' not Found. ");
 
-    builder.Services.AddDbContext<DentalNUBDbContext>(options =>
-        options.UseSqlServer(connectionString));
+builder.Services.AddDbContext<DentalNUBDbContext>(options =>
+  options.UseSqlServer(connectionString, x => x.EnableRetryOnFailure()));
 
-    var mappingconfig = TypeAdapterConfig.GlobalSettings;
+var mappingconfig = TypeAdapterConfig.GlobalSettings;
 
     // Swagger/OpenAPI configuration
     builder.Services.AddEndpointsApiExplorer();

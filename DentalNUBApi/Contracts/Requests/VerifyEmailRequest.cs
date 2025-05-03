@@ -1,7 +1,8 @@
-﻿//namespace DentalNUB.Api.Contracts.Requests;
+﻿namespace DentalNUB.Api.Contracts.Requests;
 
-//public class VerifyEmailRequest
-//{
-//    public string Email { get; set; }
-//    public string Code { get; set; }
-//}
+public class VerifyEmailRequest
+{
+    
+    public string Code { get; set; } = string.Empty;
+
+ }
