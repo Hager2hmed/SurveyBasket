@@ -1,28 +1,28 @@
-    using Microsoft.EntityFrameworkCore;
-    using DentalNUB.Api.Data;
-    using Microsoft.AspNetCore.Authentication.JwtBearer;
-    using System.Reflection.Emit;
-    using Mapster;
-    using Microsoft.Extensions.FileProviders;
-    using Microsoft.IdentityModel.Tokens;
-    using System.Text;
-    using DentalNUB.Api.Services;
-    using DentalNUB.Api.Entities;
-    using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using DentalNUB.Api.Data;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.Reflection.Emit;
+using Mapster;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using DentalNUB.Api.Services;
+using DentalNUB.Api.Entities;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Hosting;
 
-    var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
-    // Add services to the container.
-    builder.Services.AddControllers();
-    builder.Services.AddScoped<ITokenService, TokenService>();
-    builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
-    builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
-    builder.Services.AddScoped<ICaseDistributionService,CaseDistributionService>();
-    builder.Services.AddScoped<IImageService, ImageService>();
-    //builder.Services.AddScoped<IUserService, UserService>();
-    //builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
-    //builder.Services.AddScoped<IEmailService, EmailService>();
-
+// Add services to the container.
+builder.Services.AddControllers();
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddScoped<ICaseDistributionService, CaseDistributionService>();
+builder.Services.AddScoped<IImageService, ImageService>();
+//builder.Services.AddScoped<IUserService, UserService>();
+//builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
+//builder.Services.AddScoped<IEmailService, EmailService>();
 
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ??
@@ -33,22 +33,22 @@ builder.Services.AddDbContext<DentalNUBDbContext>(options =>
 
 var mappingconfig = TypeAdapterConfig.GlobalSettings;
 
-    // Swagger/OpenAPI configuration
-    builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddSwaggerGen(options =>
+// Swagger/OpenAPI configuration
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
-        options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-        {
-            Name = "Authorization",
-            Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-            Scheme = "Bearer",
-            BearerFormat = "JWT",
-            In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-            Description = "ÇÏÎá ÇáÊæßä ßÏå: Bearer {token}"
-        });
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "ÇÏÎá ÇáÊæßä ßÏå: Bearer {token}"
+    });
 
-        options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-        {
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
             {
                 new Microsoft.OpenApi.Models.OpenApiSecurityScheme
                 {
@@ -60,56 +60,63 @@ var mappingconfig = TypeAdapterConfig.GlobalSettings;
                 },
                 new string[] {}
             }
-        });
     });
+});
 
-    builder.Services.AddAuthentication("Bearer")
-        .AddJwtBearer("Bearer", options =>
+builder.Services.AddAuthentication("Bearer")
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
         {
-            options.TokenValidationParameters = new TokenValidationParameters
-            {
-                ValidateIssuer = true,
-                ValidateAudience = true,
-                ValidateLifetime = true,
-                ValidateIssuerSigningKey = true,
-                ValidIssuer = builder.Configuration["Jwt:Issuer"],
-                ValidAudience = builder.Configuration["Jwt:Audience"],
-                IssuerSigningKey = new SymmetricSecurityKey(
-        Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
-            };
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+    Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+        };
 
-        });
-
-    var app = builder.Build();
-
-    // Static file configuration
-    app.UseStaticFiles(new StaticFileOptions
-    {
-        FileProvider = new PhysicalFileProvider(
-            Path.Combine(Directory.GetCurrentDirectory(), "XRayImages")),
-        RequestPath = "/XRayImages"
     });
 
+var app = builder.Build();
+var env = app.Environment;
 
-    using (var scope = app.Services.CreateScope())
-    {
-        var services = scope.ServiceProvider;
-        var context = services.GetRequiredService<DentalNUBDbContext>();
-        await DbInitializer.Initialize(context);  
-    }
+// Static file configuration
+var xrayImagesPath = Path.Combine(env.WebRootPath, "XRayImages");
+
+if (!Directory.Exists(xrayImagesPath))
+{
+    Directory.CreateDirectory(xrayImagesPath);
+}
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(xrayImagesPath),
+    RequestPath = "/XRayImages"
+});
 
 
-    // Configure the HTTP request pipeline.
-    if (app.Environment.IsDevelopment())
-    {
-        app.UseSwagger();
-        app.UseSwaggerUI();
-    }
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    var context = services.GetRequiredService<DentalNUBDbContext>();
+    await DbInitializer.Initialize(context);
+}
 
-    app.UseHttpsRedirection();
-    app.UseAuthentication();
-    app.UseAuthorization();
 
-    app.MapControllers();
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-    app.Run();
+app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();
